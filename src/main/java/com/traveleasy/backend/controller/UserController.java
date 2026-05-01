@@ -13,7 +13,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/users")
-@CrossOrigin(origins = "http://localhost:3000")
+@CrossOrigin(origins = "*") // ✅ allow all (change later for security)
 public class UserController {
 
     @Autowired
@@ -22,54 +22,82 @@ public class UserController {
     @Autowired
     private JwtUtil jwtUtil;
 
-    // ✅ REGISTER USER
+    // ================= REGISTER =================
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody User user) {
 
-        if (user.getEmail() == null || user.getPassword() == null) {
-            return ResponseEntity.badRequest().body("Email and Password required");
+        try {
+            // ✅ validation
+            if (user.getEmail() == null || user.getPassword() == null) {
+                return ResponseEntity.badRequest().body("Email and Password required ❗");
+            }
+
+            // ✅ check duplicate email
+            User existing = repo.findByEmail(user.getEmail());
+            if (existing != null) {
+                return ResponseEntity.badRequest().body("Email already registered ❌");
+            }
+
+            // ✅ save user
+            User savedUser = repo.save(user);
+
+            // ❌ remove password before sending
+            savedUser.setPassword(null);
+
+            return ResponseEntity.ok(savedUser);
+
+        } catch (Exception e) {
+            return ResponseEntity
+                    .status(500)
+                    .body("Registration failed: " + e.getMessage());
         }
-
-        User savedUser = repo.save(user);
-
-        // ❌ DO NOT return password
-        savedUser.setPassword(null);
-
-        return ResponseEntity.ok(savedUser);
     }
 
-    // ✅ LOGIN + JWT TOKEN
+    // ================= LOGIN =================
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody User user) {
 
-        if (user.getEmail() == null || user.getPassword() == null) {
-            return ResponseEntity.badRequest().body("Email and Password required");
+        try {
+            if (user.getEmail() == null || user.getPassword() == null) {
+                return ResponseEntity.badRequest().body("Email and Password required ❗");
+            }
+
+            User existing = repo.findByEmail(user.getEmail());
+
+            if (existing != null && existing.getPassword().equals(user.getPassword())) {
+
+                // ✅ generate JWT token
+                String token = jwtUtil.generateToken(existing.getEmail());
+
+                // ❌ remove password before sending
+                existing.setPassword(null);
+
+                Map<String, Object> response = new HashMap<>();
+                response.put("token", token);
+                response.put("user", existing);
+
+                return ResponseEntity.ok(response);
+            }
+
+            return ResponseEntity.status(401).body("Invalid credentials ❌");
+
+        } catch (Exception e) {
+            return ResponseEntity
+                    .status(500)
+                    .body("Login failed: " + e.getMessage());
         }
-
-        User existing = repo.findByEmail(user.getEmail());
-
-        if (existing != null && existing.getPassword().equals(user.getPassword())) {
-
-            // ✅ generate token
-            String token = jwtUtil.generateToken(existing.getEmail());
-
-            // ❌ remove password before sending
-            existing.setPassword(null);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("token", token);
-            response.put("user", existing);
-
-            return ResponseEntity.ok(response);
-        }
-
-        return ResponseEntity.status(401).body("Invalid credentials ❌");
     }
 
-    // ✅ GET USER COUNT (ADMIN)
+    // ================= USER COUNT =================
     @GetMapping("/count")
     public ResponseEntity<?> getUserCount() {
-        long count = repo.count();
-        return ResponseEntity.ok(count);
+        try {
+            long count = repo.count();
+            return ResponseEntity.ok(count);
+        } catch (Exception e) {
+            return ResponseEntity
+                    .status(500)
+                    .body("Error fetching user count: " + e.getMessage());
+        }
     }
 }
